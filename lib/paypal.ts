@@ -156,11 +156,24 @@ export async function createPayPalInvoice(input: CreateInvoiceInput): Promise<Pa
   const data = (await paypalFetch('/v2/invoicing/invoices', {
     method: 'POST',
     body: JSON.stringify(body),
-  })) as { id: string; links?: { rel: string; href: string }[] };
-  const payerLink = data.links?.find((l) => l.rel === 'payer-view')?.href;
+  })) as { id?: string; links?: { rel: string; href: string }[] };
+  // PayPal's create response should carry the id, but sandbox has returned
+  // a body without it — fall back to searching by our invoice number.
+  let invoiceId = data.id;
+  if (!invoiceId) {
+    const found = (await paypalFetch('/v2/invoicing/search-invoices', {
+      method: 'POST',
+      body: JSON.stringify({ invoice_number: input.number, page: 1, page_size: 5, total_required: false }),
+    })) as { items?: { id: string }[] };
+    invoiceId = found.items?.[0]?.id;
+  }
+  if (!invoiceId) throw new Error('PayPal created the invoice but returned no invoice id');
+  const payerLink =
+    data.links?.find((l) => l.rel === 'payer-view')?.href ||
+    `https://www.sandbox.paypal.com/invoice/p/#${invoiceId.replace(/^INV2-/, '').replace(/-/g, '')}`;
   return {
-    paypalId: data.id,
-    payLink: payerLink || `https://www.sandbox.paypal.com/invoice/p/${data.id}`,
+    paypalId: invoiceId,
+    payLink: payerLink,
     status: 'DRAFT',
   };
 }
