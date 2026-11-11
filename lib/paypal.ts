@@ -86,8 +86,11 @@ async function paypalFetch(path: string, init: RequestInit = {}) {
     data = text;
   }
   if (!res.ok) {
-    const msg = (data as { message?: string })?.message || `PayPal ${path} failed: ${res.status}`;
-    throw new Error(msg);
+    const err = data as { message?: string; details?: { field?: string; issue?: string }[]; debug_id?: string };
+    const detailText = err.details?.map((d) => `${d.field || ''}: ${d.issue || ''}`).join('; ');
+    throw new Error(
+      `${err.message || `PayPal ${path} failed: ${res.status}`}${detailText ? ` [${detailText}]` : ''}${err.debug_id ? ` (debug_id ${err.debug_id})` : ''}`,
+    );
   }
   return data;
 }
@@ -127,7 +130,7 @@ export async function createPayPalInvoice(input: CreateInvoiceInput): Promise<Pa
     detail: {
       currency_code: 'USD',
       invoice_number: input.number,
-      payment_term: { term_type: 'NET_10', due_date: input.dueDate },
+      payment_term: { term_type: 'DUE_ON_DATE_SPECIFIED', due_date: input.dueDate },
       memo: input.memo || 'Created by Kaasu — AI billing agent',
     },
     invoicer: {
