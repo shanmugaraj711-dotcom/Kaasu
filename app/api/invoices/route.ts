@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import QRCode from 'qrcode';
 import { scanForInjection } from '@/lib/ai';
-import { createPayPalInvoice, getPayPalInvoice, paypalConfigured, PAYPAL_MODE } from '@/lib/paypal';
+import { createPayPalInvoice, getPayPalInvoice, paypalConfigured, sendPayPalInvoice, PAYPAL_MODE } from '@/lib/paypal';
 import { store } from '@/lib/store';
 import type { Invoice, ParsedInvoice } from '@/lib/types';
 import { riskScoreFor } from '@/lib/types';
@@ -91,6 +91,10 @@ export async function POST(req: NextRequest) {
       amount: parsed.amount_usd,
       dueDate,
     });
+    // Send in the same request: the store is in-memory per serverless
+    // instance, so a later send call may land on a different instance
+    // that never saw this invoice. Create + send must be atomic.
+    await sendPayPalInvoice(pp.paypalId);
     const qrDataUrl = await QRCode.toDataURL(pp.payLink, { width: 180, margin: 1 });
 
     const invoice: Invoice = {
