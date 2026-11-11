@@ -75,7 +75,9 @@ export async function POST(req: NextRequest) {
       store.log('system', 'Guardrail blocked invoice', `Blocked invoice for "${parsed.client}": ${injection.reasons.join('; ')}`, 'Prompt-injection patterns in the intake text. No invoice was created.');
       return NextResponse.json({ error: `Blocked by guardrail: ${injection.reasons.join('; ')}` }, { status: 400 });
     }
-    const number = `KAASU-${String(store.invoiceSeq).padStart(4, '0')}`;
+    // The store is in-memory, so the sequence restarts on every deploy —
+    // a timestamp suffix keeps the PayPal invoice number unique.
+    const number = `KAASU-${String(store.invoiceSeq).padStart(4, '0')}-${Date.now().toString().slice(-6)}`;
     store.invoiceSeq += 1;
     const clientEmail = parsed.clientEmail || `${parsed.client.toLowerCase().replace(/[^a-z]+/g, '.')}@example.com`;
     const dueDate = parsed.dueDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
