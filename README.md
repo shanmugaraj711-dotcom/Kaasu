@@ -20,7 +20,7 @@ Freelancers and tiny shops in India who bill US clients lose money to late payme
 
 - Next.js 16 + TypeScript (App Router), Tailwind CSS 4
 - PayPal Invoicing API (sandbox): `@paypal/agent-toolkit` tools execute send/reminder operations (direct REST fallback + REST for create/get/list/cancel/record-payment/webhook-verify)
-- AI: OpenRouter free tier (`nvidia/nemotron-3-ultra-550b-a55b:free`) via the Vercel AI SDK + `@openrouter/ai-sdk-provider`. Daily budget guard: 40 AI calls/day (account cap is 50). No paid keys anywhere.
+- AI: OpenRouter free tier (`nvidia/nemotron-3-ultra-550b-a55b:free`) first, Groq free tier (`openai/gpt-oss-120b`) second, via the Vercel AI SDK. Daily budget guard: 40 AI calls/day (OpenRouter account cap is 50; Groq free tier is ~1,000/day). No paid keys anywhere.
 - AG Grid for the receivables dashboard
 - Hosting: Vercel (must stay live through judging, Dec 15)
 
@@ -38,7 +38,8 @@ Without keys the app runs in clearly-labelled **Demo mode**: PayPal calls return
 
 | Variable | What it is |
 | --- | --- |
-| `OPENROUTER_API_KEY` | OpenRouter free-tier key. Without it: rules/template fallback. |
+| `OPENROUTER_API_KEY` | OpenRouter free-tier key. Without it: Groq is tried next, then rules/template fallback. |
+| `GROQ_API_KEY` | Groq free-tier key (free, no card). Second try when OpenRouter fails or is unset. |
 | `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` | PayPal Developer REST app (sandbox). Without them: mock mode. |
 | `PAYPAL_ENVIRONMENT` | `SANDBOX` (default) |
 | `PAYPAL_MERCHANT_EMAIL` | Email shown as the invoicer (sandbox business account). |
@@ -62,7 +63,7 @@ Without keys the app runs in clearly-labelled **Demo mode**: PayPal calls return
 ## Known limitations (honest)
 
 - **No provisioned Postgres yet.** State lives in memory per server instance and re-seeds deterministically on boot; PayPal sandbox is the source of truth for invoices. A `DATABASE_URL` Postgres adapter is the next step.
-- **50 free OpenRouter requests/day** on the account. The in-app budget guard caps AI use at 40/day and falls back to rules/templates.
+- **50 free OpenRouter requests/day** on the account. The in-app budget guard caps AI use at 40/day; if OpenRouter fails, Groq (free, ~1,000/day) is tried before falling back to rules/templates.
 - **USD only.** PayPal sandbox INR support is uncertain; the product is framed for cross-border billing, which is also the honest story for Indian freelancers.
 
 ## Demo script (under 3 minutes)

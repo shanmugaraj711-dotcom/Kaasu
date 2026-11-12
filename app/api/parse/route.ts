@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
         { status: 422 },
       );
     }
-    store.log('agent', 'Invoice parsed', `"${text.trim().slice(0, 80)}" → ${parsed.client}, $${parsed.amount_usd}, due ${parsed.dueDate}.`, via === 'ai' ? 'Parsed by AI (OpenRouter free model).' : `Parsed by rules fallback. ${note || ''}`);
+    store.log('agent', 'Invoice parsed', `"${text.trim().slice(0, 80)}" → ${parsed.client}, $${parsed.amount_usd}, due ${parsed.dueDate}.`, via === 'ai' ? (note || 'Parsed by AI.') : `Parsed by rules fallback. ${note || ''}`);
     return NextResponse.json({ parsed, via, note });
   } catch (err) {
     const message = (err as Error).message;

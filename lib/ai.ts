@@ -1,20 +1,30 @@
-// Kaasu — AI layer (OpenRouter free tier only) + guardrails.
-// Model: nvidia/nemotron-3-ultra-550b-a55b:free — verified working 2026-11-10
-// with maxTokens >= 800 (the model spends ~200 tokens reasoning; or.py's
-// max_tokens=60 returns empty). Cost $0, 50 free requests/day on the account.
+// Kaasu — AI layer (OpenRouter free tier first, Groq free tier second) + guardrails.
+// Provider 1: nvidia/nemotron-3-ultra-550b-a55b:free via OpenRouter — verified working 2026-11-10
+//   with maxTokens >= 800 (the model spends ~200 tokens reasoning; or.py's
+//   max_tokens=60 returns empty). Cost $0, 50 free requests/day on the account.
+// Provider 2: openai/gpt-oss-120b via Groq — free, no card, ~30 req/min,
+//   ~1,000 req/day. Added 2026-11-12 after OpenRouter returned empty
+//   ("No object generated") at the 2026-11-11 19:40 check; Groq is tried
+//   whenever OpenRouter fails or has no key, before the rules fallback.
 // Every AI call has a deterministic fallback (regex parse / template draft)
-// so the product keeps working if the model is busy or the daily cap is hit.
+// so the product keeps working if the models are busy or the daily cap is hit.
 
 import { generateObject, generateText } from 'ai';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
+import { createGroq } from '@ai-sdk/groq';
 import { z } from 'zod';
 import type { Invoice, ParsedInvoice } from './types';
 
 export const AI_MODEL = 'nvidia/nemotron-3-ultra-550b-a55b:free';
-export const AI_MODE = process.env.OPENROUTER_API_KEY ? 'live' : 'rules';
+export const GROQ_MODEL = 'openai/gpt-oss-120b';
+export const groqConfigured = () => Boolean(process.env.GROQ_API_KEY);
+export const AI_MODE = process.env.OPENROUTER_API_KEY || process.env.GROQ_API_KEY ? 'live' : 'rules';
 
 const openrouter = () =>
   createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY || 'missing' });
+
+const groq = () =>
+  createGroq({ apiKey: process.env.GROQ_API_KEY || 'missing' });
 
 // ---- daily AI budget guard (account cap is 50/day; stay under it) ----
 let aiCallsToday = 0;
@@ -136,31 +146,53 @@ const ParseSchema = z.object({
   language: z.enum(['en', 'ta']).optional(),
 });
 
+function toParsed(object: z.infer<typeof ParseSchema>, text: string): ParsedInvoice {
+  return {
+    ...object,
+    dueDate: resolveDueDate(object.due),
+    language: object.language || (/[\u0B80-\u0BFF]/.test(text) ? 'ta' : 'en'),
+  };
+}
+
 export async function parseInvoiceText(text: string): Promise<{ parsed: ParsedInvoice; via: 'ai' | 'rules'; note?: string }> {
   const injection = scanForInjection(text);
   if (injection.blocked) {
     throw new Error(`Guardrail blocked this input: ${injection.reasons.join('; ')}`);
   }
+  const prompt = `Parse this freelancer billing note into a structured invoice. The note may be in Tamil, English, or Tanglish (Tamil written in Latin letters). Amounts are in USD. If no due date is given, use "in 7 days". Reply with the object only.\n\nNote: "${text}"\n\nToday is ${new Date().toISOString().slice(0, 10)}.`;
   if (AI_MODE === 'live' && aiBudgetLeft() > 0) {
-    try {
-      spendAiCall();
-      const { object } = await generateObject({
-        model: openrouter()(AI_MODEL),
-        schema: ParseSchema,
-        prompt: `Parse this freelancer billing note into a structured invoice. The note may be in Tamil, English, or Tanglish (Tamil written in Latin letters). Amounts are in USD. If no due date is given, use "in 7 days". Reply with the object only.\n\nNote: "${text}"\n\nToday is ${new Date().toISOString().slice(0, 10)}.`,
-        maxOutputTokens: 1200,
-      });
-      const parsed: ParsedInvoice = {
-        ...object,
-        dueDate: resolveDueDate(object.due),
-        language: object.language || (/[\u0B80-\u0BFF]/.test(text) ? 'ta' : 'en'),
-      };
-      return { parsed, via: 'ai' };
-    } catch (err) {
-      // fall through to deterministic rules parser
-      const parsed = rulesParse(text);
-      return { parsed, via: 'rules', note: `AI parse failed (${(err as Error).message}); used rules parser.` };
+    // Provider 1: OpenRouter (free tier)
+    if (process.env.OPENROUTER_API_KEY) {
+      try {
+        spendAiCall();
+        const { object } = await generateObject({
+          model: openrouter()(AI_MODEL),
+          schema: ParseSchema,
+          prompt,
+          maxOutputTokens: 1200,
+        });
+        return { parsed: toParsed(object, text), via: 'ai', note: 'Parsed by AI (OpenRouter free model).' };
+      } catch {
+        // fall through to Groq
+      }
     }
+    // Provider 2: Groq (free tier) — second try when OpenRouter fails or has no key
+    if (groqConfigured()) {
+      try {
+        spendAiCall();
+        const { object } = await generateObject({
+          model: groq()(GROQ_MODEL),
+          schema: ParseSchema,
+          prompt,
+          maxOutputTokens: 1200,
+        });
+        return { parsed: toParsed(object, text), via: 'ai', note: 'Parsed by AI (Groq fallback).' };
+      } catch {
+        // fall through to rules
+      }
+    }
+    const parsed = rulesParse(text);
+    return { parsed, via: 'rules', note: 'AI parse failed on all configured providers; used rules parser.' };
   }
   return { parsed: rulesParse(text), via: 'rules', note: AI_MODE === 'live' ? 'AI daily budget used up; used rules parser.' : 'AI key not configured; used rules parser.' };
 }
