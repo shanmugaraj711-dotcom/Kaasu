@@ -16,6 +16,7 @@ export default function Home() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [paypalMode, setPaypalMode] = useState('mock');
+  const [groqOn, setGroqOn] = useState(false);
   const [selected, setSelected] = useState<Invoice | null>(null);
   const [reminders, setReminders] = useState<ReminderDraft[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
@@ -31,15 +32,18 @@ export default function Home() {
 
   const load = useCallback(async () => {
     try {
-      const [invRes, remRes, audRes] = await Promise.all([
+      const [invRes, remRes, audRes, healthRes] = await Promise.all([
         fetch('/api/invoices'),
         fetch('/api/reminders'),
         fetch('/api/audit'),
+        fetch('/api/health'),
       ]);
       const invData = await invRes.json();
       setInvoices(invData.invoices || []);
       setStats(invData.stats || null);
       setPaypalMode(invData.paypalMode || 'mock');
+      const healthData = await healthRes.json();
+      setGroqOn(!!healthData?.ai?.groqConfigured);
       const remData = await remRes.json();
       setReminders(remData.reminders || []);
       setAutopilot(!!remData.autopilot);
@@ -185,21 +189,21 @@ export default function Home() {
       {/* Header */}
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight">Kaasu <span className="text-emerald-700">காசு</span></h1>
-          <p className="text-sm text-zinc-600">AI billing agent for freelancers — speak it, send it, get paid. USD only.</p>
+          <h1 className="text-4xl font-extrabold tracking-tight text-zinc-900">Kaasu <span className="text-emerald-700">காசு</span></h1>
+          <p className="mt-1 text-sm text-zinc-600">AI billing agent for freelancers — speak it, send it, get paid. USD only.</p>
         </div>
         <div className="flex gap-2 text-xs font-semibold">
           <span className={`rounded-full px-3 py-1 ${paypalMode === 'live' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
             PayPal: {paypalMode === 'live' ? 'Sandbox — live' : 'Demo mode'}
           </span>
-          <span className="rounded-full bg-sky-100 px-3 py-1 text-sky-800">AI: OpenRouter free</span>
+          <span className="rounded-full bg-sky-100 px-3 py-1 text-sky-800">AI: {groqOn ? 'OpenRouter + Groq free' : 'OpenRouter free'}</span>
         </div>
       </header>
 
       {msg && <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm">{msg}</div>}
 
       {/* Intake */}
-      <section className="mt-6 rounded-2xl border bg-white p-5 shadow-sm">
+      <section className="mt-6 rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-white p-5 shadow-sm">
         <h2 className="text-lg font-bold">New invoice — just say it</h2>
         <p className="text-sm text-zinc-600">Example: &ldquo;Ravi, website work, $500, due Friday&rdquo; — Tamil or English.</p>
         <div className="mt-3 flex gap-2">
@@ -217,7 +221,7 @@ export default function Home() {
           <button onClick={startListening} disabled={listening} className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
             {listening ? 'Listening…' : '🎙️ Speak'}
           </button>
-          <button onClick={parseNote} disabled={busy === 'parse' || !note.trim()} className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
+          <button onClick={parseNote} disabled={busy === 'parse' || !note.trim()} className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
             {busy === 'parse' ? 'Parsing…' : 'Parse with AI'}
           </button>
         </div>
@@ -326,7 +330,7 @@ export default function Home() {
                 <p className="mt-1 text-sm text-zinc-700">{r.text}</p>
                 {r.reasoning && <p className="mt-1 text-xs text-zinc-500">Agent reasoning: {r.reasoning}</p>}
                 <div className="mt-2 flex gap-2">
-                  <button onClick={() => reminderAction(r.id, 'send')} disabled={busy === `send-${r.id}`} className="rounded-lg bg-emerald-600 px-3 py-1 text-sm font-bold text-white">Approve & send</button>
+                  <button onClick={() => reminderAction(r.id, 'send')} disabled={busy === `send-${r.id}`} className="rounded-lg bg-emerald-700 px-3 py-1 text-sm font-bold text-white">Approve & send</button>
                   <button onClick={() => reminderAction(r.id, 'reject')} disabled={busy === `reject-${r.id}`} className="rounded-lg bg-zinc-100 px-3 py-1 text-sm font-bold">Reject</button>
                 </div>
               </div>
@@ -354,7 +358,7 @@ export default function Home() {
       </section>
 
       <footer className="mt-6 text-center text-xs text-zinc-500">
-        Kaasu — PayPal AI Hackathon entry. Built with Next.js, PayPal Invoicing API (sandbox), OpenRouter free tier, AG Grid.
+        Kaasu — PayPal AI Hackathon entry. Built with Next.js, PayPal Invoicing API (sandbox), OpenRouter free tier + Groq fallback, AG Grid.
         Dashboard shows seeded demo clients; invoices you create are real sandbox invoices when PayPal credentials are connected.
       </footer>
     </main>
